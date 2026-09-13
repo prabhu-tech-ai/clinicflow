@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
 
 import 'package:clinicflow/main.dart';
 
@@ -13,6 +14,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Welcome Back'), findsOneWidget);
 
+    await tester.enterText(find.byType(TextField).at(0), '001');
+    await tester.enterText(find.byType(TextField).at(1), '1234');
     await tester.tap(find.text('Login'));
     await tester.pumpAndSettle();
     expect(find.text('Dashboard'), findsOneWidget);

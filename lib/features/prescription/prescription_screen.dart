@@ -2,9 +2,40 @@ import 'package:flutter/material.dart';
 
 import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
+import '../../models/clinic_inputs.dart';
+import '../../repositories/clinic_repository.dart';
 
-class PrescriptionScreen extends StatelessWidget {
+class PrescriptionScreen extends StatefulWidget {
   const PrescriptionScreen({super.key});
+
+  @override
+  State<PrescriptionScreen> createState() => _PrescriptionScreenState();
+}
+
+class _PrescriptionScreenState extends State<PrescriptionScreen> {
+  bool _saving = false;
+
+  Future<void> _savePrescription() async {
+    setState(() => _saving = true);
+    try {
+      var patient = await clinicRepository.patients.findByName('Ramesh Kumar');
+      patient ??= await clinicRepository.savePatient(const PatientInput(fullName: 'Ramesh Kumar'));
+      final visits = await clinicRepository.visits.watchForPatient(patient.id).first;
+      final visit = visits.isNotEmpty ? visits.first : await clinicRepository.saveVisit(VisitInput(patientId: patient.id, visitType: 'New Visit', visitDate: DateTime.now()));
+      final itemInputs = <PrescriptionItemInput>[];
+      for (final item in const [('Paracetamol 500mg', '1 - 0 - 1', '5 Days'), ('Cetirizine 10mg', '1 - 0 - 0', '5 Days'), ('ORS', '1 Packet', '3 Days')]) {
+        final medicine = await clinicRepository.medicines.findByName(item.$1) ?? await clinicRepository.saveMedicine(MedicineInput(name: item.$1));
+        itemInputs.add(PrescriptionItemInput(medicineId: medicine.id, dosage: item.$2, frequency: item.$2, duration: item.$3));
+      }
+      await clinicRepository.savePrescription(PrescriptionInput(visitId: visit.id, patientId: patient.id, items: itemInputs));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Prescription saved successfully')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save prescription')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -41,14 +72,14 @@ class PrescriptionScreen extends StatelessWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () {},
+                      onPressed: _saving ? null : _savePrescription,
                       child: const Text('Save'),
                     ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton(
-                      onPressed: () {},
+                      onPressed: _saving ? null : _savePrescription,
                       child: const Text('Save & Print'),
                     ),
                   ),

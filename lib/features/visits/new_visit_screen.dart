@@ -2,10 +2,49 @@ import 'package:flutter/material.dart';
 
 import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
+import '../../models/clinic_inputs.dart';
+import '../../repositories/clinic_repository.dart';
 
-class NewVisitScreen extends StatelessWidget {
+class NewVisitScreen extends StatefulWidget {
   const NewVisitScreen({super.key, this.patientName = 'Ramesh Kumar'});
   final String patientName;
+
+  @override
+  State<NewVisitScreen> createState() => _NewVisitScreenState();
+}
+
+class _NewVisitScreenState extends State<NewVisitScreen> {
+  final _doctorController = TextEditingController();
+  final _dateController = TextEditingController(text: '05 Sep 2026');
+  final _symptomsController = TextEditingController();
+  final _notesController = TextEditingController();
+  String _visitType = 'New Visit';
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _doctorController.dispose();
+    _dateController.dispose();
+    _symptomsController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveVisit() async {
+    setState(() => _saving = true);
+    try {
+      var patient = await clinicRepository.patients.findByName(widget.patientName);
+      patient ??= await clinicRepository.savePatient(PatientInput(fullName: widget.patientName));
+      final visit = await clinicRepository.saveVisit(VisitInput(patientId: patient.id, visitType: _visitType, visitDate: DateTime.now(), symptoms: _symptomsController.text, notes: _notesController.text));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Visit saved successfully')));
+      Navigator.pop(context, visit.id);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save visit')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -24,9 +63,9 @@ class NewVisitScreen extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         DropdownButtonFormField<String>(
-          value: patientName,
-          items:
-              [patientName, 'Priya Sharma']
+            value: widget.patientName,
+            items:
+              [widget.patientName, 'Priya Sharma']
                   .map(
                     (name) => DropdownMenuItem(value: name, child: Text(name)),
                   )
@@ -42,32 +81,33 @@ class NewVisitScreen extends StatelessWidget {
           children: [
             ChoiceChip(
               label: const Text('New Visit'),
-              selected: true,
-              onSelected: (_) {},
+              selected: _visitType == 'New Visit',
+              onSelected: (_) => setState(() => _visitType = 'New Visit'),
             ),
             const SizedBox(width: 10),
             ChoiceChip(
               label: const Text('Follow-up'),
-              selected: false,
-              onSelected: (_) {},
+              selected: _visitType == 'Follow-up',
+              onSelected: (_) => setState(() => _visitType = 'Follow-up'),
             ),
           ],
         ),
         const SizedBox(height: 18),
-        const AppTextField(label: 'Doctor', hint: 'Select doctor'),
+        AppTextField(label: 'Doctor', hint: 'Select doctor', controller: _doctorController),
         const SizedBox(height: 18),
-        const AppTextField(label: 'Visit Date', hint: '05 Sep 2026'),
+        AppTextField(label: 'Visit Date', hint: '05 Sep 2026', controller: _dateController),
         const SizedBox(height: 18),
-        const AppTextField(
+        AppTextField(
           label: 'Symptoms',
           hint: 'Fever, headache, body pain',
+          controller: _symptomsController,
         ),
         const SizedBox(height: 18),
-        const AppTextField(label: 'Notes', hint: 'Add notes'),
+        AppTextField(label: 'Notes', hint: 'Add notes', controller: _notesController),
         const SizedBox(height: 22),
         PrimaryButton(
           label: 'Save Visit',
-          onPressed: () => Navigator.pop(context),
+          onPressed: _saving ? null : _saveVisit,
         ),
       ],
     ),

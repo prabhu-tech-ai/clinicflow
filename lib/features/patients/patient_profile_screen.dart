@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
+import '../../models/clinic_inputs.dart';
+import '../../repositories/clinic_repository.dart';
 import '../visits/new_visit_screen.dart';
 
-class PatientProfileScreen extends StatelessWidget {
+class PatientProfileScreen extends StatefulWidget {
   const PatientProfileScreen({
     super.key,
     this.patientName = 'Ramesh Kumar',
@@ -16,11 +18,48 @@ class PatientProfileScreen extends StatelessWidget {
   final bool isNew;
 
   @override
+  State<PatientProfileScreen> createState() => _PatientProfileScreenState();
+}
+
+class _PatientProfileScreenState extends State<PatientProfileScreen> {
+  final _nameController = TextEditingController();
+  final _mobileController = TextEditingController();
+  final _dateController = TextEditingController();
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _mobileController.dispose();
+    _dateController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _savePatient() async {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Patient name is required')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await clinicRepository.savePatient(PatientInput(fullName: name, mobile: _mobileController.text.trim()));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Patient saved successfully')));
+      Navigator.pop(context);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save patient')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: Text(isNew ? 'New Patient' : 'Patient Profile'),
+      title: Text(widget.isNew ? 'New Patient' : 'Patient Profile'),
       actions: [
-        if (!isNew)
+        if (!widget.isNew)
           IconButton(onPressed: () {}, icon: const Icon(Icons.edit_outlined)),
       ],
     ),
@@ -36,7 +75,7 @@ class PatientProfileScreen extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isNew ? 'New patient' : patientName,
+                    widget.isNew ? 'New patient' : widget.patientName,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 18,
@@ -44,9 +83,9 @@ class PatientProfileScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    isNew
+                    widget.isNew
                         ? 'Complete patient details'
-                        : '$patientId  •  Male, 31 Y',
+                        : '${widget.patientId}  •  Male, 31 Y',
                     style: const TextStyle(
                       color: AppColors.muted,
                       fontSize: 12,
@@ -58,17 +97,18 @@ class PatientProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 18),
-        if (isNew) ...[
-          const AppTextField(label: 'Full Name', hint: 'Enter patient name'),
+        if (widget.isNew) ...[
+          AppTextField(label: 'Full Name', hint: 'Enter patient name', controller: _nameController),
           const SizedBox(height: 14),
-          const AppTextField(
+          AppTextField(
             label: 'Mobile Number',
             hint: 'Enter mobile number',
+            controller: _mobileController,
           ),
           const SizedBox(height: 14),
-          const AppTextField(label: 'Date of Birth', hint: 'DD/MM/YYYY'),
+          AppTextField(label: 'Date of Birth', hint: 'DD/MM/YYYY', controller: _dateController),
           const SizedBox(height: 20),
-          PrimaryButton(label: 'Save Patient', onPressed: null),
+          PrimaryButton(label: 'Save Patient', onPressed: _saving ? null : _savePatient),
         ] else ...[
           const SectionTitle('Patient Details'),
           const AppCard(
@@ -100,7 +140,7 @@ class PatientProfileScreen extends StatelessWidget {
                 () => Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => NewVisitScreen(patientName: patientName),
+                    builder: (_) => NewVisitScreen(patientName: widget.patientName),
                   ),
                 ),
           ),
