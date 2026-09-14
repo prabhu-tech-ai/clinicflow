@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../utils/app_theme.dart';
 
@@ -85,12 +86,22 @@ class AppTextField extends StatelessWidget {
     this.icon,
     this.obscureText = false,
     this.controller,
+    this.keyboardType,
+    this.inputFormatters,
+    this.readOnly = false,
+    this.onTap,
+    this.suffixIcon,
   });
   final String label;
   final String? hint;
   final IconData? icon;
   final bool obscureText;
   final TextEditingController? controller;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final bool readOnly;
+  final VoidCallback? onTap;
+  final Widget? suffixIcon;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -108,9 +119,14 @@ class AppTextField extends StatelessWidget {
       TextField(
         controller: controller,
         obscureText: obscureText,
+        keyboardType: keyboardType,
+        inputFormatters: inputFormatters,
+        readOnly: readOnly,
+        onTap: onTap,
         decoration: InputDecoration(
           hintText: hint,
           prefixIcon: icon == null ? null : Icon(icon, size: 18),
+          suffixIcon: suffixIcon,
         ),
       ),
     ],

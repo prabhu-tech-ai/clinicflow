@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
 import '../../models/clinic_inputs.dart';
 import '../../repositories/clinic_repository.dart';
+import '../../database/database.dart';
 import '../visits/new_visit_screen.dart';
 
 class PatientProfileScreen extends StatefulWidget {
@@ -25,7 +27,41 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
   final _nameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _dateController = TextEditingController();
+  Patient? _patient;
+  bool _editing = false;
   bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!widget.isNew) _loadPatient();
+  }
+
+  Future<void> _loadPatient() async {
+    final patient = await clinicRepository.patients.findByCode(widget.patientId);
+    if (!mounted || patient == null) return;
+    setState(() {
+      _patient = patient;
+      _nameController.text = patient.fullName;
+      _mobileController.text = patient.mobile ?? '';
+      _dateController.text = patient.dateOfBirth == null
+          ? ''
+          : _formatDate(patient.dateOfBirth!);
+    });
+  }
+
+  void _startEditing() => setState(() => _editing = true);
+
+  Future<void> _selectDateOfBirth() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _parseDate(_dateController.text) ?? DateTime(2000),
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+    if (selectedDate == null || !mounted) return;
+    _dateController.text = _formatDate(selectedDate);
+  }
 
   @override
   void dispose() {
@@ -43,10 +79,22 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
     }
     setState(() => _saving = true);
     try {
-      await clinicRepository.savePatient(PatientInput(fullName: name, mobile: _mobileController.text.trim()));
+      final savedPatient = await clinicRepository.savePatient(
+        PatientInput(
+          fullName: name,
+          mobile: _mobileController.text.trim(),
+          dateOfBirth: _parseDate(_dateController.text),
+        ),
+        id: _patient?.id,
+      );
       if (!mounted) return;
+      _patient = savedPatient;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Patient saved successfully')));
-      Navigator.pop(context);
+      if (widget.isNew) {
+        Navigator.pop(context);
+      } else {
+        setState(() => _editing = false);
+      }
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save patient')));
     } finally {
@@ -60,7 +108,10 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
       title: Text(widget.isNew ? 'New Patient' : 'Patient Profile'),
       actions: [
         if (!widget.isNew)
-          IconButton(onPressed: () {}, icon: const Icon(Icons.edit_outlined)),
+          IconButton(
+            onPressed: _editing ? null : _startEditing,
+            icon: const Icon(Icons.edit_outlined),
+          ),
       ],
     ),
     body: ListView(
@@ -69,13 +120,15 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
         AppCard(
           child: Row(
             children: [
-              const InitialAvatar('R'),
+              InitialAvatar(
+                (widget.isNew ? 'N' : (_patient?.fullName ?? widget.patientName)[0]).toUpperCase(),
+              ),
               const SizedBox(width: 14),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.isNew ? 'New patient' : widget.patientName,
+                    widget.isNew ? 'New patient' : (_patient?.fullName ?? widget.patientName),
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 18,
@@ -97,28 +150,37 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
           ),
         ),
         const SizedBox(height: 18),
-        if (widget.isNew) ...[
+        if (widget.isNew || _editing) ...[
           AppTextField(label: 'Full Name', hint: 'Enter patient name', controller: _nameController),
           const SizedBox(height: 14),
           AppTextField(
             label: 'Mobile Number',
             hint: 'Enter mobile number',
             controller: _mobileController,
+            keyboardType: TextInputType.phone,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
           ),
           const SizedBox(height: 14),
-          AppTextField(label: 'Date of Birth', hint: 'DD/MM/YYYY', controller: _dateController),
+          AppTextField(
+            label: 'Date of Birth',
+            hint: 'DD/MM/YYYY',
+            controller: _dateController,
+            readOnly: true,
+            onTap: _selectDateOfBirth,
+            suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+          ),
           const SizedBox(height: 20),
           PrimaryButton(label: 'Save Patient', onPressed: _saving ? null : _savePatient),
         ] else ...[
           const SectionTitle('Patient Details'),
-          const AppCard(
+          AppCard(
             child: Column(
               children: [
-                _DetailRow('Date of Birth', '12 Aug 1991'),
-                _DetailRow('Address', '25, MG Road, Delhi'),
-                _DetailRow('Blood Group', 'B+'),
-                _DetailRow('Allergies', 'No known allergies'),
-                _DetailRow('Medical History', 'Hypertension'),
+                _DetailRow('Date of Birth', _patient?.dateOfBirth == null ? 'Not provided' : _formatDate(_patient!.dateOfBirth!)),
+                _DetailRow('Address', _patient?.address ?? 'Not provided'),
+                _DetailRow('Blood Group', _patient?.bloodGroup ?? 'Not provided'),
+                _DetailRow('Allergies', _patient?.allergies ?? 'None recorded'),
+                _DetailRow('Medical History', _patient?.medicalHistory ?? 'Not provided'),
               ],
             ),
           ),
@@ -148,6 +210,19 @@ class _PatientProfileScreenState extends State<PatientProfileScreen> {
       ],
     ),
   );
+
+  static String _formatDate(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+  static DateTime? _parseDate(String value) {
+    final parts = value.trim().split('/');
+    if (parts.length != 3) return null;
+    final day = int.tryParse(parts[0]);
+    final month = int.tryParse(parts[1]);
+    final year = int.tryParse(parts[2]);
+    if (day == null || month == null || year == null) return null;
+    return DateTime(year, month, day);
+  }
 }
 
 class _DetailRow extends StatelessWidget {

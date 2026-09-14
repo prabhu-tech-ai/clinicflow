@@ -9,23 +9,52 @@ class PatientDao {
   final ClinicDatabase db;
   final _uuid = const Uuid();
 
-  Stream<List<Patient>> watchPatients() => (db.select(db.patients)
-        ..where((row) => row.isDeleted.equals(false))
-        ..orderBy([(row) => OrderingTerm(expression: row.fullName)]))
-      .watch();
+  Stream<List<Patient>> watchPatients() =>
+      (db.select(db.patients)
+            ..where((row) => row.isDeleted.equals(false))
+            ..orderBy([(row) => OrderingTerm(expression: row.fullName)]))
+          .watch();
 
-  Future<List<Patient>> getPatients() => (db.select(db.patients)..where((row) => row.isDeleted.equals(false))).get();
+  Stream<List<Patient>> watchRecentPatients({int limit = 3}) =>
+      (db.select(db.patients)
+            ..where((row) => row.isDeleted.equals(false))
+            ..orderBy([
+              (row) => OrderingTerm(
+                expression: row.createdAt,
+                mode: OrderingMode.desc,
+              ),
+            ])
+            ..limit(limit))
+          .watch();
 
-  Future<Patient?> findById(String id) => (db.select(db.patients)..where((row) => row.id.equals(id))).getSingleOrNull();
+  Future<List<Patient>> getPatients() =>
+      (db.select(db.patients)
+        ..where((row) => row.isDeleted.equals(false))).get();
 
-  Future<Patient?> findByName(String name) => (db.select(db.patients)..where((row) => row.fullName.equals(name) & row.isDeleted.equals(false))).getSingleOrNull();
+  Future<Patient?> findById(String id) =>
+      (db.select(db.patients)
+        ..where((row) => row.id.equals(id))).getSingleOrNull();
+
+  Future<Patient?> findByCode(String code) =>
+      (db.select(db.patients)..where(
+        (row) => row.patientCode.equals(code) & row.isDeleted.equals(false),
+      )).getSingleOrNull();
+
+  Future<Patient?> findByName(String name) =>
+      (db.select(db.patients)..where(
+        (row) => row.fullName.equals(name) & row.isDeleted.equals(false),
+      )).getSingleOrNull();
 
   Future<Patient> save(PatientInput input, {String? id}) async {
     final now = DateTime.now().toUtc();
     final patientId = id ?? _uuid.v4();
     final existing = id == null ? null : await findById(id);
-    final code = existing?.patientCode ?? 'P${now.millisecondsSinceEpoch.toString().substring(4)}';
-    await db.into(db.patients).insertOnConflictUpdate(
+    final code =
+        existing?.patientCode ??
+        'P${now.millisecondsSinceEpoch.toString().substring(4)}';
+    await db
+        .into(db.patients)
+        .insertOnConflictUpdate(
           PatientsCompanion.insert(
             id: patientId,
             patientCode: code,
@@ -40,7 +69,9 @@ class PatientDao {
             updatedAt: now,
           ),
         );
-    await db.into(db.syncQueue).insert(
+    await db
+        .into(db.syncQueue)
+        .insert(
           SyncQueueCompanion.insert(
             id: _uuid.v4(),
             entityType: 'patient',
@@ -56,6 +87,12 @@ class PatientDao {
 
   Future<void> delete(String id) async {
     final now = DateTime.now().toUtc();
-    await (db.update(db.patients)..where((row) => row.id.equals(id))).write(PatientsCompanion(updatedAt: Value(now), isDeleted: const Value(true), syncStatus: const Value('pending')));
+    await (db.update(db.patients)..where((row) => row.id.equals(id))).write(
+      PatientsCompanion(
+        updatedAt: Value(now),
+        isDeleted: const Value(true),
+        syncStatus: const Value('pending'),
+      ),
+    );
   }
 }
