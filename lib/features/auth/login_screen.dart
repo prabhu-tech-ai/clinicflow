@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
-import '../../repositories/clinic_repository.dart';
 import '../shell/app_shell.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,30 +14,12 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _userController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _saving = false;
 
-  Future<void> _login() async {
-    final username = _userController.text.trim();
-    final password = _passwordController.text;
-    if (username.isEmpty || password.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Enter your user ID and password')));
-      return;
-    }
-    setState(() => _saving = true);
-    try {
-      await clinicRepository.users.ensureDemoUser();
-      final user = await clinicRepository.users.authenticate(username, password);
-      if (!mounted) return;
-      if (user == null) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid user ID or password')));
-        return;
-      }
-      Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const AppShell()));
-    } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to login. Please try again.')));
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+  void _login() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const AppShell()),
+    );
   }
 
   @override
@@ -119,10 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
               ],
             ),
             const SizedBox(height: 20),
-            PrimaryButton(
-              label: 'Login',
-              onPressed: _saving ? null : _login,
-            ),
+            PrimaryButton(label: 'Login', onPressed: _login),
             const SizedBox(height: 34),
             const Center(
               child: Text(
