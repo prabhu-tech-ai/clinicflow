@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../utils/app_theme.dart';
 import '../../widgets/common_widgets.dart';
 import '../../models/clinic_inputs.dart';
 import '../../repositories/clinic_repository.dart';
