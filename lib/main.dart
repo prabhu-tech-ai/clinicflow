@@ -1,10 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'features/auth/splash_screen.dart';
+import 'services/firebase_sync_service.dart';
 import 'utils/app_theme.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
+  unawaited(firebaseSyncService.initialize());
 }
 
 class MyApp extends StatelessWidget {

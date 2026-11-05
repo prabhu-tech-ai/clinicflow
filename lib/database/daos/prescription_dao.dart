@@ -2,18 +2,23 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/clinic_inputs.dart';
+import '../../services/sync_payload.dart';
 import '../database.dart';
+import 'sync_queue_dao.dart';
 
 class PrescriptionDao {
   PrescriptionDao(this.db);
   final ClinicDatabase db;
   final _uuid = const Uuid();
+  late final _syncQueue = SyncQueueDao(db);
 
   Future<Prescription> save(PrescriptionInput input, {String? id}) async {
     final now = DateTime.now().toUtc();
     final prescriptionId = id ?? _uuid.v4();
-    await db.transaction(() async {
-      await db.into(db.prescriptions).insertOnConflictUpdate(
+    return db.transaction(() async {
+      await db
+          .into(db.prescriptions)
+          .insertOnConflictUpdate(
             PrescriptionsCompanion.insert(
               id: prescriptionId,
               visitId: input.visitId,
@@ -26,10 +31,13 @@ class PrescriptionDao {
             ),
           );
       if (id != null) {
-        await (db.delete(db.prescriptionItems)..where((row) => row.prescriptionId.equals(prescriptionId))).go();
+        await (db.delete(db.prescriptionItems)
+          ..where((row) => row.prescriptionId.equals(prescriptionId))).go();
       }
       for (final item in input.items) {
-        await db.into(db.prescriptionItems).insert(
+        await db
+            .into(db.prescriptionItems)
+            .insert(
               PrescriptionItemsCompanion.insert(
                 id: _uuid.v4(),
                 prescriptionId: prescriptionId,
@@ -43,20 +51,47 @@ class PrescriptionDao {
               ),
             );
       }
-      await db.into(db.syncQueue).insert(
-            SyncQueueCompanion.insert(
-              id: _uuid.v4(),
-              entityType: 'prescription',
-              entityId: prescriptionId,
-              action: id == null ? 'create' : 'update',
-              payload: '{}',
-              createdAt: now,
-              updatedAt: now,
-            ),
-          );
+      final saved =
+          await (db.select(db.prescriptions)
+            ..where((row) => row.id.equals(prescriptionId))).getSingle();
+      final items =
+          await (db.select(db.prescriptionItems)
+            ..where((row) => row.prescriptionId.equals(prescriptionId))).get();
+      await _syncQueue.enqueue(
+        entityType: 'prescriptions',
+        entityId: prescriptionId,
+        action: id == null ? 'create' : 'update',
+        payload: SyncPayload.prescription(saved, items),
+      );
+      return saved;
     });
-    return (await (db.select(db.prescriptions)..where((row) => row.id.equals(prescriptionId))).getSingle());
   }
 
-  Future<void> delete(String id) async => (db.update(db.prescriptions)..where((row) => row.id.equals(id))).write(const PrescriptionsCompanion(isDeleted: Value(true), syncStatus: Value('pending')));
+  Future<void> delete(String id) async {
+    final now = DateTime.now().toUtc();
+    await db.transaction(() async {
+      await (db.update(db.prescriptions)
+        ..where((row) => row.id.equals(id))).write(
+        PrescriptionsCompanion(
+          isDeleted: const Value(true),
+          syncStatus: const Value('pending'),
+          updatedAt: Value(now),
+        ),
+      );
+      final deleted =
+          await (db.select(db.prescriptions)
+            ..where((row) => row.id.equals(id))).getSingleOrNull();
+      if (deleted != null) {
+        final items =
+            await (db.select(db.prescriptionItems)
+              ..where((row) => row.prescriptionId.equals(id))).get();
+        await _syncQueue.enqueue(
+          entityType: 'prescriptions',
+          entityId: id,
+          action: 'delete',
+          payload: SyncPayload.prescription(deleted, items),
+        );
+      }
+    });
+  }
 }

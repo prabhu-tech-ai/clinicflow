@@ -2,12 +2,15 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../models/clinic_inputs.dart';
+import '../../services/sync_payload.dart';
 import '../database.dart';
+import 'sync_queue_dao.dart';
 
 class PatientDao {
   PatientDao(this.db);
   final ClinicDatabase db;
   final _uuid = const Uuid();
+  late final _syncQueue = SyncQueueDao(db);
 
   Stream<List<Patient>> watchPatients() =>
       (db.select(db.patients)
@@ -48,51 +51,61 @@ class PatientDao {
   Future<Patient> save(PatientInput input, {String? id}) async {
     final now = DateTime.now().toUtc();
     final patientId = id ?? _uuid.v4();
-    final existing = id == null ? null : await findById(id);
-    final code =
-        existing?.patientCode ??
-        'P${now.millisecondsSinceEpoch.toString().substring(4)}';
-    await db
-        .into(db.patients)
-        .insertOnConflictUpdate(
-          PatientsCompanion.insert(
-            id: patientId,
-            patientCode: code,
-            fullName: input.fullName.trim(),
-            mobile: Value(input.mobile?.trim()),
-            dateOfBirth: Value(input.dateOfBirth),
-            address: Value(input.address?.trim()),
-            bloodGroup: Value(input.bloodGroup?.trim()),
-            allergies: Value(input.allergies?.trim()),
-            medicalHistory: Value(input.medicalHistory?.trim()),
-            createdAt: existing?.createdAt ?? now,
-            updatedAt: now,
-          ),
-        );
-    await db
-        .into(db.syncQueue)
-        .insert(
-          SyncQueueCompanion.insert(
-            id: _uuid.v4(),
-            entityType: 'patient',
-            entityId: patientId,
-            action: id == null ? 'create' : 'update',
-            payload: '{}',
-            createdAt: now,
-            updatedAt: now,
-          ),
-        );
-    return (await findById(patientId))!;
+    return db.transaction(() async {
+      final existing = id == null ? null : await findById(id);
+      final code =
+          existing?.patientCode ??
+          'P${now.millisecondsSinceEpoch.toString().substring(4)}';
+      await db
+          .into(db.patients)
+          .insertOnConflictUpdate(
+            PatientsCompanion.insert(
+              id: patientId,
+              patientCode: code,
+              fullName: input.fullName.trim(),
+              mobile: Value(input.mobile?.trim()),
+              dateOfBirth: Value(input.dateOfBirth),
+              address: Value(input.address?.trim()),
+              bloodGroup: Value(input.bloodGroup?.trim()),
+              allergies: Value(input.allergies?.trim()),
+              medicalHistory: Value(input.medicalHistory?.trim()),
+              createdAt: existing?.createdAt ?? now,
+              updatedAt: now,
+            ),
+          );
+      final saved = await findById(patientId);
+      if (saved == null) {
+        throw StateError('Patient $patientId was not saved');
+      }
+      await _syncQueue.enqueue(
+        entityType: 'patients',
+        entityId: patientId,
+        action: id == null ? 'create' : 'update',
+        payload: SyncPayload.patient(saved),
+      );
+      return saved;
+    });
   }
 
   Future<void> delete(String id) async {
     final now = DateTime.now().toUtc();
-    await (db.update(db.patients)..where((row) => row.id.equals(id))).write(
-      PatientsCompanion(
-        updatedAt: Value(now),
-        isDeleted: const Value(true),
-        syncStatus: const Value('pending'),
-      ),
-    );
+    await db.transaction(() async {
+      await (db.update(db.patients)..where((row) => row.id.equals(id))).write(
+        PatientsCompanion(
+          updatedAt: Value(now),
+          isDeleted: const Value(true),
+          syncStatus: const Value('pending'),
+        ),
+      );
+      final deleted = await findById(id);
+      if (deleted != null) {
+        await _syncQueue.enqueue(
+          entityType: 'patients',
+          entityId: id,
+          action: 'delete',
+          payload: SyncPayload.patient(deleted),
+        );
+      }
+    });
   }
 }

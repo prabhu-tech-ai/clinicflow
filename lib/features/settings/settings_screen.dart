@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../services/firebase_sync_service.dart';
 import '../../utils/app_theme.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -37,7 +38,32 @@ class SettingsScreen extends StatelessWidget {
         const SizedBox(height: 26),
         _SettingRow(Icons.settings_outlined, 'Settings'),
         _SettingRow(Icons.people_outline, 'Manage Doctors'),
-        _SettingRow(Icons.sync_outlined, 'Sync & Backup'),
+        _SettingRow(
+          Icons.sync_outlined,
+          'Sync & Backup',
+          onTap: () async {
+            await firebaseSyncService.retryFailed();
+            final pending = await firebaseSyncService.pendingCount();
+            if (!context.mounted) return;
+            await showDialog<void>(
+              context: context,
+              builder:
+                  (context) => AlertDialog(
+                    title: const Text('Sync & Backup'),
+                    content: Text(
+                      '${firebaseSyncService.status}\n\n'
+                      '$pending change(s) waiting to sync.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'),
+                      ),
+                    ],
+                  ),
+            );
+          },
+        ),
         _SettingRow(Icons.help_outline, 'Help & Support'),
         const SizedBox(height: 12),
         _SettingRow(Icons.logout, 'Logout', color: Colors.redAccent),
@@ -47,10 +73,16 @@ class SettingsScreen extends StatelessWidget {
 }
 
 class _SettingRow extends StatelessWidget {
-  const _SettingRow(this.icon, this.label, {this.color = AppColors.ink});
+  const _SettingRow(
+    this.icon,
+    this.label, {
+    this.color = AppColors.ink,
+    this.onTap,
+  });
   final IconData icon;
   final String label;
   final Color color;
+  final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) => ListTile(
     contentPadding: EdgeInsets.zero,
@@ -60,6 +92,6 @@ class _SettingRow extends StatelessWidget {
       style: TextStyle(color: color, fontWeight: FontWeight.w600),
     ),
     trailing: const Icon(Icons.chevron_right, color: AppColors.muted),
-    onTap: () {},
+    onTap: onTap,
   );
 }
