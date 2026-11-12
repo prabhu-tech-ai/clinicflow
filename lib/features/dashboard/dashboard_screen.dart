@@ -7,6 +7,7 @@ import '../../repositories/clinic_repository.dart';
 import '../patients/patient_list_screen.dart';
 import '../patients/patient_profile_screen.dart';
 import '../visits/new_visit_screen.dart';
+import 'dashboard_metric_screen.dart';
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -44,7 +45,7 @@ class DashboardScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 18),
-                  _StatsGrid(patientCount: recentPatients.length),
+                  const _StatsGrid(),
                   const SizedBox(height: 24),
                   const SectionTitle('Quick Actions'),
                   Row(
@@ -155,95 +156,138 @@ class DashboardScreen extends StatelessWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard(this.value, this.label, this.icon, this.color);
+  const _StatCard(this.value, this.label, this.icon, this.color, this.onTap);
   final String value;
   final String label;
   final IconData icon;
   final Color color;
+  final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => AppCard(
-    padding: const EdgeInsets.all(13),
-    child: Row(
-      children: [
-        Icon(icon, color: color, size: 25),
-        const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
-                color: AppColors.ink,
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(14),
+    child: AppCard(
+      padding: const EdgeInsets.all(13),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 25),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: AppColors.ink,
+                ),
               ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 10, color: AppColors.muted),
-            ),
-          ],
-        ),
-      ],
+              Text(
+                label,
+                style: const TextStyle(fontSize: 10, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ],
+      ),
     ),
   );
 }
 
 class _StatsGrid extends StatelessWidget {
-  const _StatsGrid({required this.patientCount});
-  final int patientCount;
+  const _StatsGrid();
 
   @override
   Widget build(BuildContext context) => StreamBuilder<List<Visit>>(
     stream: clinicRepository.visits.watchVisits(),
     builder:
-        (context, visitsSnapshot) => StreamBuilder<List<Doctor>>(
-          stream: clinicRepository.staff.watchDoctors(),
-          builder: (context, doctorsSnapshot) {
-            final followUps =
-                (visitsSnapshot.data ?? const <Visit>[])
-                    .where((visit) => visit.visitType == 'Follow-up')
-                    .length;
-            final doctors = doctorsSnapshot.data?.length ?? 0;
-            return GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.65,
-              children: [
-                _StatCard(
-                  '${patientCount}',
-                  'Today\'s Patients',
-                  Icons.people_outline,
-                  AppColors.teal,
-                ),
-                _StatCard(
-                  '${patientCount}',
-                  'New Patients',
-                  Icons.person_add_alt_1_outlined,
-                  Colors.orange,
-                ),
-                _StatCard(
-                  '$followUps',
-                  'Follow-ups',
-                  Icons.event_available_outlined,
-                  Colors.deepPurple,
-                ),
-                _StatCard(
-                  '$doctors',
-                  'Doctors',
-                  Icons.medical_services_outlined,
-                  Colors.indigo,
-                ),
-              ],
-            );
-          },
+        (context, visitsSnapshot) => StreamBuilder<List<Patient>>(
+          stream: clinicRepository.patients.watchPatients(),
+          builder:
+              (context, patientsSnapshot) => StreamBuilder<List<Doctor>>(
+                stream: clinicRepository.staff.watchDoctors(),
+                builder: (context, doctorsSnapshot) {
+                  final visits = visitsSnapshot.data ?? const <Visit>[];
+                  final patients = patientsSnapshot.data ?? const <Patient>[];
+                  final today = DateTime.now();
+                  final todayPatientIds =
+                      visits
+                          .where(
+                            (visit) =>
+                                _isSameDay(visit.visitDate.toLocal(), today),
+                          )
+                          .map((visit) => visit.patientId)
+                          .toSet();
+                  final newPatients =
+                      patients
+                          .where(
+                            (patient) =>
+                                _isSameDay(patient.createdAt.toLocal(), today),
+                          )
+                          .length;
+                  final followUps =
+                      visits
+                          .where((visit) => visit.visitType == 'Follow-up')
+                          .length;
+                  final doctors = doctorsSnapshot.data?.length ?? 0;
+                  return GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 2,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.65,
+                    children: [
+                      _StatCard(
+                        '${todayPatientIds.length}',
+                        'Today\'s Patients',
+                        Icons.people_outline,
+                        AppColors.teal,
+                        () =>
+                            _openMetric(context, DashboardMetric.todayPatients),
+                      ),
+                      _StatCard(
+                        '$newPatients',
+                        'New Patients',
+                        Icons.person_add_alt_1_outlined,
+                        Colors.orange,
+                        () => _openMetric(context, DashboardMetric.newPatients),
+                      ),
+                      _StatCard(
+                        '$followUps',
+                        'Follow-ups',
+                        Icons.event_available_outlined,
+                        Colors.deepPurple,
+                        () => _openMetric(context, DashboardMetric.followUps),
+                      ),
+                      _StatCard(
+                        '$doctors',
+                        'Doctors',
+                        Icons.medical_services_outlined,
+                        Colors.indigo,
+                        () => _openMetric(context, DashboardMetric.doctors),
+                      ),
+                    ],
+                  );
+                },
+              ),
         ),
   );
+
+  static bool _isSameDay(DateTime first, DateTime second) =>
+      first.year == second.year &&
+      first.month == second.month &&
+      first.day == second.day;
+
+  static void _openMetric(BuildContext context, DashboardMetric metric) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => DashboardMetricScreen(metric: metric)),
+    );
+  }
 }
 
 class _QuickAction extends StatelessWidget {

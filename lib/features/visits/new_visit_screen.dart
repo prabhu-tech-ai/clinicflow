@@ -14,11 +14,33 @@ class NewVisitScreen extends StatefulWidget {
 
 class _NewVisitScreenState extends State<NewVisitScreen> {
   final _doctorController = TextEditingController();
-  final _dateController = TextEditingController(text: '05 Sep 2026');
+  late DateTime _visitDate = DateTime.now();
+  late final TextEditingController _dateController = TextEditingController(
+    text: _formatDate(_visitDate),
+  );
   final _symptomsController = TextEditingController();
   final _notesController = TextEditingController();
   String _visitType = 'New Visit';
   bool _saving = false;
+
+  static String _formatDate(DateTime date) =>
+      '${date.day.toString().padLeft(2, '0')} ${_month(date.month)} ${date.year}';
+
+  static String _month(int month) =>
+      const [
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
+      ][month - 1];
 
   @override
   void dispose() {
@@ -29,17 +51,35 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
     super.dispose();
   }
 
+  Future<void> _selectVisitDate() async {
+    final selectedDate = await showDatePicker(
+      context: context,
+      initialDate: _visitDate,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+    );
+    if (selectedDate == null || !mounted) return;
+    setState(() {
+      _visitDate = selectedDate;
+      _dateController.text = _formatDate(selectedDate);
+    });
+  }
+
   Future<void> _saveVisit() async {
     setState(() => _saving = true);
     try {
       var patient = await clinicRepository.patients.findByName(widget.patientName);
       patient ??= await clinicRepository.savePatient(PatientInput(fullName: widget.patientName));
-      final visit = await clinicRepository.saveVisit(VisitInput(patientId: patient.id, visitType: _visitType, visitDate: DateTime.now(), symptoms: _symptomsController.text, notes: _notesController.text));
+      final visit = await clinicRepository.saveVisit(VisitInput(patientId: patient.id, visitType: _visitType, visitDate: _visitDate, symptoms: _symptomsController.text, notes: _notesController.text));
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Visit saved successfully')));
       Navigator.pop(context, visit.id);
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Unable to save visit')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Unable to save visit')));
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -94,7 +134,14 @@ class _NewVisitScreenState extends State<NewVisitScreen> {
         const SizedBox(height: 18),
         AppTextField(label: 'Doctor', hint: 'Select doctor', controller: _doctorController),
         const SizedBox(height: 18),
-        AppTextField(label: 'Visit Date', hint: '05 Sep 2026', controller: _dateController),
+        AppTextField(
+          label: 'Visit Date',
+          hint: 'Select date',
+          controller: _dateController,
+          readOnly: true,
+          onTap: _selectVisitDate,
+          suffixIcon: const Icon(Icons.calendar_today_outlined, size: 18),
+        ),
         const SizedBox(height: 18),
         AppTextField(
           label: 'Symptoms',
